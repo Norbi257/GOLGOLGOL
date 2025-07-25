@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8" />
+<title>Egyszerű FIFA-szerű focijáték</title>
+<style>
+  body { margin: 0; background: #2c7;}
+  canvas { display: block; margin: auto; background: #060; border: 2px solid #030;}
+  #teamSelect {
+    text-align: center;
+    margin: 10px;
+  }
+  button {
+    font-size: 16px; margin: 5px; padding: 8px 15px;
+  }
+  #info {
+    color: white;
+    text-align: center;
+    font-family: monospace;
+    margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+
+<div id="teamSelect">
+  Válassz csapatot:
+  <button onclick="startGame(0)">Tigrisek</button>
+  <button onclick="startGame(1)">Farkasok</button>
+  <button onclick="startGame(2)">Sasok</button>
+  <button onclick="startGame(3)">Medvék</button>
+  <button onclick="startGame(4)">Sárkányok</button>
+</div>
+
+<canvas id="gameCanvas" width="800" height="450"></canvas>
+
+<div id="info">
+  Irányítás: WASD + Space (lövése), Passz: E<br>
+  Cél: gólt lőni az ellenfél kapujába!
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const teams = [
+  { name: 'Tigrisek', color: '#f90' },
+  { name: 'Farkasok', color: '#888' },
+  { name: 'Sasok', color: '#ff0' },
+  { name: 'Medvék', color: '#600' },
+  { name: 'Sárkányok', color: '#c00' }
+];
+
+let playerTeam = null;
+let enemyTeam = null;
+
+const FIELD_W = canvas.width;
+const FIELD_H = canvas.height;
+
+const GOAL_W = 100;
+const GOAL_H = 150;
+
+const ballRadius = 10;
+let ball = { x: FIELD_W/2, y: FIELD_H/2, vx: 0, vy: 0 };
+
+let player = { x: 100, y: FIELD_H/2, speed: 4, color: '', hasBall: false };
+let enemy = { x: FIELD_W - 100, y: FIELD_H/2, speed: 3.5, color: '', hasBall: false };
+
+let keys = {};
+
+let playerScore = 0;
+let enemyScore = 0;
+
+let gameStarted = false;
+
+function resetPositions() {
+  player.x = 100; player.y = FIELD_H/2; player.hasBall = true;
+  enemy.x = FIELD_W - 100; enemy.y = FIELD_H/2; enemy.hasBall = false;
+  ball.x = player.x + 20;
+  ball.y = player.y;
+  ball.vx = 0; ball.vy = 0;
+}
+
+function startGame(teamIndex) {
+  playerTeam = teams[teamIndex];
+  // Ellenség random másik csapat
+  do {
+    enemyTeam = teams[Math.floor(Math.random() * teams.length)];
+  } while (enemyTeam === playerTeam);
+
+  player.color = playerTeam.color;
+  enemy.color = enemyTeam.color;
+  playerScore = 0;
+  enemyScore = 0;
+  resetPositions();
+  gameStarted = true;
+
+  document.getElementById('teamSelect').style.display = 'none';
+}
+
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+function movePlayer() {
+  if (keys['w'] && player.y > 20) player.y -= player.speed;
+  if (keys['s'] && player.y < FIELD_H - 20) player.y += player.speed;
+  if (keys['a'] && player.x > 20) player.x -= player.speed;
+  if (keys['d'] && player.x < FIELD_W - 20) player.x += player.speed;
+
+  // Labda magadhoz vétele
+  if (player.hasBall) {
+    ball.x = player.x + 20;
+    ball.y = player.y;
+  } else {
+    // Ha közel vagy a labdához, átveheted
+    const dist = Math.hypot(player.x - ball.x, player.y - ball.y);
+    if (dist < 30) {
+      player.hasBall = true;
+      enemy.hasBall = false;
+      ball.vx = 0; ball.vy = 0;
+    }
+  }
+}
+
+function moveEnemy() {
+  // Egyszerű AI: ha nincs labda, megy a labdához, ha van labda, megy a kapuhoz
+  if (!enemy.hasBall) {
+    // menjen a labdához
+    const dx = ball.x - enemy.x;
+    const dy = ball.y - enemy.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 5) {
+      enemy.x += enemy.speed * dx / dist;
+      enemy.y += enemy.speed * dy / dist;
+    }
+    // Ha közel van, átveszi a labdát
+    if (dist < 30) {
+      enemy.hasBall = true;
+      player.hasBall = false;
+      ball.vx = 0; ball.vy = 0;
+    }
+  } else {
+    // megy a saját kapu felé, hogy gólt lőjön
+    const goalX = 0; // bal kapu
+    const goalY = FIELD_H / 2;
+    const dx = goalX - enemy.x;
+    const dy = goalY - enemy.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 5) {
+      enemy.x += enemy.speed * dx / dist;
+      enemy.y += enemy.speed * dy / dist;
+    }
+
+    // Labda vele együtt mozog
+    ball.x = enemy.x - 20;
+    ball.y = enemy.y;
+
+    // Néha lövés (random)
+    if (Math.random() < 0.01) {
+      ball.vx = -10;
+      ball.vy = 0;
+      enemy.hasBall = false;
+    }
+  }
+}
+
+function shootBall() {
+  if (!player.hasBall) return;
+  ball.vx = 10;
+  ball.vy = 0;
+  player.hasBall = false;
+}
+
+function passBall() {
+  if (!player.hasBall) return;
+  // Passz: csak előre és oldalra kicsit
+  ball.vx = 8;
+  ball.vy = (Math.random() - 0.5) * 4;
+  player.hasBall = false;
+}
+
+function updateBall() {
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+
+  // Labda fékezése
+  ball.vx *= 0.95;
+  ball.vy *= 0.95;
+
+  // Ha labda elhagyja a pályát, visszaállítás
+  if (ball.x < 0 || ball.x > FIELD_W || ball.y < 0 || ball.y > FIELD_H) {
+    resetPositions();
+  }
+
+  // Ha a labda közel van az ellenfél kapujához (bal oldal)
+  if (ball.x < 10 && ball.y > FIELD_H/2 - GOAL_H/2 && ball.y < FIELD_H/2 + GOAL_H/2) {
+    enemyScore++;
+    alert(Gól az ellenfélnél! ${playerTeam.name} ${playerScore} - ${enemyScore} ${enemyTeam.name});
+    resetPositions();
+  }
+
+  // Ha a labda közel van a saját kapujához (jobb oldal)
+  if (ball.x > FIELD_W - 10 && ball.y > FIELD_H/2 - GOAL_H/2 && ball.y < FIELD_H/2 + GOAL_H/2) {
+    playerScore++;
+    alert(Gól neked! ${playerTeam.name} ${playerScore} - ${enemyScore} ${enemyTeam.name});
+    resetPositions();
+  }
+}
+
+function drawField() {
+  // Zöld pálya
+  ctx.fillStyle = '#060';
+  ctx.fillRect(0, 0, FIELD_W, FIELD_H);
+
+  // Középvonal
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(FIELD_W/2, 0);
+  ctx.lineTo(FIELD_W/2, FIELD_H);
+  ctx.stroke();
+
+  // Középkör
+  ctx.beginPath();
+  ctx.arc(FIELD_W/2, FIELD_H/2, 70, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Kapuk
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, FIELD_H/2 - GOAL_H/2, 10, GOAL_H);
+  ctx.fillRect(FIELD_W - 10, FIELD_H/2 - GOAL_H/2, 10, GOAL_H);
+
+  // Pontok a kapu előtt
+  ctx.beginPath();
+  ctx.arc(50, FIELD_H/2, 10, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(FIELD_W - 50, FIELD_H/2, 10, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function drawPlayer(p) {
+  ctx.fillStyle = p.color;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Fej
+  ctx.fillStyle = 'pink';
+  ctx.beginPath();
+  ctx.arc(p.x, p.y - 25, 10, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawBall() {
+  ctx.fillStyle = 'white';
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ballRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#555';
+  ctx.stroke();
+}
+
+function drawScore() {
+  ctx.fillStyle = 'white';
+  ctx.font = '24px monospace';
+  ctx.fillText(${playerTeam.name}: ${playerScore}, 20, 30);
+  ctx.fillText(${enemyTeam.name}: ${enemyScore}, FIELD_W - 180, 30);
+}
+
+function gameLoop() {
+  if (!gameStarted) return;
+
+  movePlayer();
+  moveEnemy();
+  updateBall();
+
+  // Lövés Space-szel
+  if (keys[' ']) {
+    shootBall();
+    keys[' '] = false; // csak egyszer lőjön
+  }
+
+  // Passz E-vel
+  if (keys['e']) {
+    passBall();
+    keys['e'] = false;
+  }
+
+  drawField();
+  drawPlayer(player);
+  drawPlayer(enemy);
+  drawBall();
+  drawScore();
+
+  requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+</body>
+</html>
